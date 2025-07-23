@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <title>多機能くじ引きアプリ</title>
+    <style>
+        body { font-family: sans-serif; text-align: center; margin: 2rem; background-color: #f4f4f4; }
+        .container { max-width: 600px; margin: auto; padding: 2rem; border-radius: 10px; background-color: white; box-shadow: 0 4px 8px rgba(0,0,0,0.1); }
+        h1 { color: #333; }
+        h2, h3 { color: #444; border-bottom: 2px solid #5cb85c; padding-bottom: 5px; margin-top: 30px;}
+        #result-area { min-height: 100px; margin: 20px 0; }
+        #result { font-size: 2.5em; font-weight: bold; color: #d9534f; }
+        #participant-name { font-size: 1.5em; margin-top: 10px; }
+        input[type="text"] { padding: 10px; font-size: 1em; width: 60%; margin-bottom: 20px; border: 1px solid #ccc; border-radius: 4px; }
+        button { padding: 12px 25px; font-size: 1.2em; cursor: pointer; background-color: #5cb85c; color: white; border: none; border-radius: 5px; transition: background-color 0.3s; }
+        button:hover { background-color: #4cae4c; }
+        button:disabled { background-color: #ccc; cursor: not-allowed; }
+        #prize-area, #history-area { margin-top: 30px; text-align: left; }
+        ul { list-style-type: none; padding: 0; }
+        li { background-color: #f9f9f9; border: 1px solid #ddd; padding: 8px; margin-bottom: 5px; border-radius: 4px; }
+        .loading-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(255, 255, 255, 0.8); display: flex; justify-content: center; align-items: center; font-size: 1.5em; z-index: 1000; }
+    </style>
+</head>
+<body>
+
+    <div id="loading" class="loading-overlay">
+        <p>データを読み込んでいます...</p>
+    </div>
+
+    <div class="container">
+        <h1>スペシャル大抽選会</h1>
+
+        <div id="prize-area">
+            <h2>賞品一覧</h2>
+            <ul id="prize-list"></ul>
+        </div>
+
+        <h2>抽選コーナー</h2>
+        <p>名前を入力してくじを引いてください！</p>
+        <input type="text" id="name-input" placeholder="あなたの名前">
+
+        <button id="draw-button" onclick="drawLottery()">くじを引く！</button>
+
+        <div id="result-area">
+            <div id="result"></div>
+            <div id="participant-name"></div>
+        </div>
+        
+        <div id="history-area">
+            <h3>抽選履歴</h3>
+            <ul id="history-list"></ul>
+        </div>
+    </div>
+    
+    <script>
+        // ▼▼▼▼▼ ここにウェブアプリのURLを貼り付けてください ▼▼▼▼▼
+        const WEB_APP_URL = "https://script.google.com/macros/s/AKfycby-aBwM4jrlxZ6s6x7QTJWntRDmQVwGZuBTIlF6bbbUKmthk4nYmMYdrBAt9xNgWgJRpg/exec";
+        // ▲▲▲▲▲ ここにウェブアプリのURLを貼り付けてください ▲▲▲▲▲
+
+        // --- DOM要素の取得 ---
+        const nameInput = document.getElementById('name-input');
+        const drawButton = document.getElementById('draw-button');
+        const resultDiv = document.getElementById('result');
+        const participantNameDiv = document.getElementById('participant-name');
+        const historyList = document.getElementById('history-list');
+        const prizeList = document.getElementById('prize-list');
+        const loadingDiv = document.getElementById('loading');
+
+        // --- グローバル変数 ---
+        let prizes = [];
+        let drawnNames = [];
+
+        // --- 初期化処理 ---
+        window.onload = async function() {
+            try {
+                const res = await fetch(WEB_APP_URL + '?action=getInitialData');
+                const data = await res.json();
+
+                if (data.error) throw new Error(data.error);
+
+                // 締め切りチェック
+                const now = new Date();
+                const deadline = new Date(data.deadline);
+                if (now > deadline) {
+                    document.querySelector('.container').innerHTML = '<h1>この抽選会は終了しました。</h1>';
+                    loadingDiv.style.display = 'none';
+                    return;
+                }
+
+                // 賞品リストと抽選済みリストをセット
+                prizes = data.prizes;
+                drawnNames = data.drawnNames;
+
+                // 画面に表示
+                displayPrizes();
+                displayHistory();
+
+            } catch (error) {
+                document.querySelector('.container').innerHTML = `<h1>エラーが発生しました</h1><p>設定を確認してください: ${error.message}</p>`;
+            } finally {
+                loadingDiv.style.display = 'none';
+            }
+        };
+
+        // --- 表示用関数 ---
+        function displayPrizes() {
+            prizes.forEach(prize => {
+                const listItem = document.createElement('li');
+                listItem.textContent = prize;
+                prizeList.appendChild(listItem);
+            });
+        }
+
+        function displayHistory() {
+            drawnNames.forEach(name => addHistoryToList(name, "（結果は引いた人のお楽しみ）"));
+        }
+
+        function addHistoryToList(name, prize) {
+            const listItem = document.createElement('li');
+            listItem.textContent = `${name}さん：${prize}`;
+            historyList.prepend(listItem);
+        }
+
+        // --- くじ引き実行関数 ---
+        async function drawLottery() {
+            const name = nameInput.value.trim();
+            if (!name) {
+                alert('名前を入力してください。');
+                return;
+            }
+
+            if (drawnNames.includes(name)) {
+                alert('この名前はすでにくじを引いています。');
+                return;
+            }
+
+            drawButton.disabled = true;
+            drawButton.textContent = '抽選中...';
+
+            // くじを引く
+            const randomIndex = Math.floor(Math.random() * prizes.length);
+            const selectedPrize = prizes[randomIndex];
+
+            try {
+                // 結果をスプレッドシートに記録
+                const res = await fetch(WEB_APP_URL, {
