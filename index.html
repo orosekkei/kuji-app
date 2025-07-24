@@ -67,16 +67,15 @@
         const loadingDiv = document.getElementById('loading');
 
         // --- グローバル変数 ---
-        let prizes = [];
         let drawnNames = [];
 
         // --- 初期化処理 ---
         window.onload = async function() {
             try {
-                const res = await fetch(WEB_APP_URL + '?action=getInitialData');
+                const res = await fetch(WEB_APP_URL);
                 const data = await res.json();
 
-                if (data.error) throw new Error(data.error);
+                if (data.status === 'error') throw new Error(data.message);
 
                 // 締め切りチェック
                 const now = new Date();
@@ -87,13 +86,11 @@
                     return;
                 }
 
-                // 賞品リストと抽選済みリストをセット
-                prizes = data.prizes;
-                drawnNames = data.drawnNames;
+                // 賞品リストと抽選済みリストを画面に表示
+                displayPrizes(data.prizes);
+                displayHistory(data.history);
+                drawnNames = data.history.map(h => h.name);
 
-                // 画面に表示
-                displayPrizes();
-                displayHistory();
 
             } catch (error) {
                 document.querySelector('.container').innerHTML = `<h1>エラーが発生しました</h1><p>設定を確認してください: ${error.message}</p>`;
@@ -103,7 +100,7 @@
         };
 
         // --- 表示用関数 ---
-        function displayPrizes() {
+        function displayPrizes(prizes) {
             prizes.forEach(prize => {
                 const listItem = document.createElement('li');
                 listItem.textContent = prize;
@@ -111,14 +108,13 @@
             });
         }
 
-        function displayHistory() {
-            drawnNames.forEach(name => addHistoryToList(name, "（抽選済み）"));
-        }
-
-        function addHistoryToList(name, prize) {
-            const listItem = document.createElement('li');
-            listItem.textContent = `${name}さん：${prize}`;
-            historyList.prepend(listItem);
+        function displayHistory(historyData) {
+            historyList.innerHTML = ''; // 履歴をクリア
+            historyData.forEach(entry => {
+                const listItem = document.createElement('li');
+                listItem.textContent = `${entry.name}さん：${entry.prize}`;
+                historyList.prepend(listItem);
+            });
         }
 
         // --- くじ引き実行関数 ---
@@ -137,37 +133,47 @@
             drawButton.disabled = true;
             drawButton.textContent = '抽選中...';
 
-            // くじを引く
-            const randomIndex = Math.floor(Math.random() * prizes.length);
-            const selectedPrize = prizes[randomIndex];
-
             try {
-                // 結果をスプレッドシートに記録
+                // サーバーにくじ引きをリクエスト
                 const res = await fetch(WEB_APP_URL, {
                     method: 'POST',
-                    headers: { 'Content-Type': 'text/plain' }, // GASの制約のため
-                    body: JSON.stringify({ action: 'recordResult', name: name, prize: selectedPrize })
+                    headers: { 'Content-Type': 'text/plain' },
+                    body: JSON.stringify({ name: name })
                 });
                 const result = await res.json();
                 
-                if (result.status !== 'success') throw new Error(result.message);
+                if (result.status === 'error') {
+                   throw new Error(result.message);
+                }
 
                 // 画面に結果を表示
-                resultDiv.textContent = selectedPrize;
+                resultDiv.textContent = result.prize;
                 participantNameDiv.textContent = `${name}さんの結果`;
                 
                 // 履歴を更新
                 drawnNames.push(name);
-                historyList.innerHTML = ''; // 履歴を一旦クリア
-                displayHistory(); // 再描画
+                const newHistoryEntry = { name: name, prize: result.prize };
+                const allHistory = [newHistoryEntry, ...getCurrentHistory()];
+                displayHistory(allHistory);
 
             } catch (error) {
-                alert('エラーが発生しました。もう一度お試しください。\n' + error.message);
+                alert('エラーが発生しました：\n' + error.message);
             } finally {
                 drawButton.textContent = 'くじを引く！';
                 drawButton.disabled = false;
-                 nameInput.value = '';
+                nameInput.value = '';
             }
+        }
+        
+        function getCurrentHistory() {
+            const historyData = [];
+            historyList.querySelectorAll('li').forEach(item => {
+                const parts = item.textContent.split('さん：');
+                if (parts.length === 2) {
+                    historyData.push({ name: parts[0], prize: parts[1] });
+                }
+            });
+            return historyData;
         }
     </script>
 </body>
