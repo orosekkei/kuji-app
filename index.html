@@ -8,7 +8,7 @@
         .container { max-width: 600px; margin: auto; padding: 2rem; border-radius: 10px; background-color: white; box-shadow: 0 4px 8px rgba(0,0,0,0.1); }
         h1 { color: #333; }
         h2, h3 { color: #444; border-bottom: 2px solid #5cb85c; padding-bottom: 5px; margin-top: 30px;}
-        #result-area { min-height: 100px; margin: 20px 0; }
+        #result-area { min-height: 100px; margin: 20px 0; display: flex; flex-direction: column; justify-content: center; align-items: center;}
         #result { font-size: 2.5em; font-weight: bold; color: #d9534f; }
         #participant-name { font-size: 1.5em; margin-top: 10px; }
         input[type="text"] { padding: 10px; font-size: 1em; width: 60%; margin-bottom: 20px; border: 1px solid #ccc; border-radius: 4px; }
@@ -20,6 +20,7 @@
         li { background-color: #f9f9f9; border: 1px solid #ddd; padding: 8px; margin-bottom: 5px; border-radius: 4px; }
         .loading-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(255, 255, 255, 0.8); display: flex; justify-content: center; align-items: center; font-size: 1.5em; z-index: 1000; }
     </style>
+    <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.9.2/dist/confetti.browser.min.js"></script>
 </head>
 <body>
 
@@ -28,7 +29,7 @@
     </div>
 
     <div class="container">
-        <h1>スペシャル大抽選会</h1>
+        <h1 id="main-title">スペシャル大抽選会</h1>
 
         <div id="prize-area">
             <h2>賞品一覧</h2>
@@ -54,10 +55,11 @@
     
     <script>
         // ▼▼▼▼▼ ここにウェブアプリのURLを貼り付けてください ▼▼▼▼▼
-        const WEB_APP_URL = "https://script.google.com/macros/s/AKfycbwKJJr7WFSO02mewCz3PU6OVjSPcX0zZxxxvI3ko5ovcSafxVgq9AG9HDfJ5O-lkB6n4Q/exec";
+        const WEB_APP_URL = "https://script.google.com/macros/s/AKfycbz2ml1J-jnZGJthgWf9a2bQWFIUt6vcioH-CmwKu7F0BUSQ-w78Nfd-BLeGs6RQl0rEzA/exec";
         // ▲▲▲▲▲ ここにウェブアプリのURLを貼り付けてください ▲▲▲▲▲
 
         // --- DOM要素の取得 ---
+        const mainTitle = document.getElementById('main-title');
         const nameInput = document.getElementById('name-input');
         const drawButton = document.getElementById('draw-button');
         const resultDiv = document.getElementById('result');
@@ -67,6 +69,7 @@
         const loadingDiv = document.getElementById('loading');
 
         // --- グローバル変数 ---
+        let allPrizes = [];
         let drawnNames = [];
 
         // --- 初期化処理 ---
@@ -77,20 +80,19 @@
 
                 if (data.status === 'error') throw new Error(data.message);
 
-                // 締め切りチェック
                 const now = new Date();
                 const deadline = new Date(data.deadline);
                 if (now > deadline) {
                     document.querySelector('.container').innerHTML = '<h1>この抽選会は終了しました。</h1>';
-                    loadingDiv.style.display = 'none';
                     return;
                 }
-
-                // 賞品リストと抽選済みリストを画面に表示
-                displayPrizes(data.prizes);
-                displayHistory(data.history);
+                
+                mainTitle.textContent = data.title;
+                allPrizes = data.prizes;
                 drawnNames = data.history.map(h => h.name);
 
+                displayPrizes(allPrizes);
+                displayHistory(data.history);
 
             } catch (error) {
                 document.querySelector('.container').innerHTML = `<h1>エラーが発生しました</h1><p>設定を確認してください: ${error.message}</p>`;
@@ -109,12 +111,14 @@
         }
 
         function displayHistory(historyData) {
-            historyList.innerHTML = ''; // 履歴をクリア
-            historyData.forEach(entry => {
-                const listItem = document.createElement('li');
-                listItem.textContent = `${entry.name}さん：${entry.prize}`;
-                historyList.prepend(listItem);
-            });
+            historyList.innerHTML = '';
+            historyData.forEach(entry => addHistoryToList(entry.name, entry.prize));
+        }
+
+        function addHistoryToList(name, prize) {
+            const listItem = document.createElement('li');
+            listItem.textContent = `${name}さん：${prize}`;
+            historyList.prepend(listItem);
         }
 
         // --- くじ引き実行関数 ---
@@ -131,7 +135,13 @@
             }
 
             drawButton.disabled = true;
-            drawButton.textContent = '抽選中...';
+            participantNameDiv.textContent = '';
+            
+            // ルーレット演出を開始
+            const rouletteInterval = setInterval(() => {
+                const randomIndex = Math.floor(Math.random() * allPrizes.length);
+                resultDiv.textContent = allPrizes[randomIndex];
+            }, 50); // 0.05秒ごとに表示を切り替え
 
             try {
                 // サーバーにくじ引きをリクエスト
@@ -140,40 +150,39 @@
                     headers: { 'Content-Type': 'text/plain' },
                     body: JSON.stringify({ name: name })
                 });
+
+                // 演出のため最低でも2秒待つ
+                await new Promise(resolve => setTimeout(resolve, 2000));
+
                 const result = await res.json();
+                clearInterval(rouletteInterval); // ルーレットを停止
                 
                 if (result.status === 'error') {
                    throw new Error(result.message);
                 }
 
-                // 画面に結果を表示
-                resultDiv.textContent = result.prize;
+                // 最終結果を表示
+                const finalPrize = result.prize;
+                resultDiv.textContent = finalPrize;
                 participantNameDiv.textContent = `${name}さんの結果`;
+                
+                // 当選演出
+                if (finalPrize !== "はずれ") {
+                    confetti({ particleCount: 150, spread: 180 });
+                }
                 
                 // 履歴を更新
                 drawnNames.push(name);
-                const newHistoryEntry = { name: name, prize: result.prize };
-                const allHistory = [newHistoryEntry, ...getCurrentHistory()];
-                displayHistory(allHistory);
+                addHistoryToList(name, finalPrize);
 
             } catch (error) {
+                clearInterval(rouletteInterval);
+                resultDiv.textContent = '';
                 alert('エラーが発生しました：\n' + error.message);
             } finally {
-                drawButton.textContent = 'くじを引く！';
                 drawButton.disabled = false;
                 nameInput.value = '';
             }
-        }
-        
-        function getCurrentHistory() {
-            const historyData = [];
-            historyList.querySelectorAll('li').forEach(item => {
-                const parts = item.textContent.split('さん：');
-                if (parts.length === 2) {
-                    historyData.push({ name: parts[0], prize: parts[1] });
-                }
-            });
-            return historyData;
         }
     </script>
 </body>
