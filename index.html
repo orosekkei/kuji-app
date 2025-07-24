@@ -112,7 +112,7 @@
         }
 
         function displayHistory() {
-            drawnNames.forEach(name => addHistoryToList(name, "（結果は引いた人のお楽しみ）"));
+            drawnNames.forEach(name => addHistoryToList(name, "（抽選済み）"));
         }
 
         function addHistoryToList(name, prize) {
@@ -144,3 +144,31 @@
             try {
                 // 結果をスプレッドシートに記録
                 const res = await fetch(WEB_APP_URL, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'text/plain' }, // GASの制約のため
+                    body: JSON.stringify({ action: 'recordResult', name: name, prize: selectedPrize })
+                });
+                const result = await res.json();
+                
+                if (result.status !== 'success') throw new Error(result.message);
+
+                // 画面に結果を表示
+                resultDiv.textContent = selectedPrize;
+                participantNameDiv.textContent = `${name}さんの結果`;
+                
+                // 履歴を更新
+                drawnNames.push(name);
+                historyList.innerHTML = ''; // 履歴を一旦クリア
+                displayHistory(); // 再描画
+
+            } catch (error) {
+                alert('エラーが発生しました。もう一度お試しください。\n' + error.message);
+            } finally {
+                drawButton.textContent = 'くじを引く！';
+                drawButton.disabled = false;
+                 nameInput.value = '';
+            }
+        }
+    </script>
+</body>
+</html>
